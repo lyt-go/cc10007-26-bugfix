@@ -5,14 +5,25 @@
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import ROUTERS
+from app.services.coordinator import coordinator
 from app.store import store
 
-app = FastAPI(title="智能运营决策分析平台", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动即对账：从漂移监控数据集重读，校正残留的过期稳定/告警结论
+    coordinator.reconcile_all()
+    yield
+
+
+app = FastAPI(title="智能运营决策分析平台", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

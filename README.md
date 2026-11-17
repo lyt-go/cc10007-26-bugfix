@@ -75,5 +75,33 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 评分卡 × 数据漂移联动
+
+两个模块通过 `backend/app/services/coordinator.py` 收敛跨模块写入：
+
+- 状态机只允许沿 `草稿 -> 评审/校验中 -> 已启用 -> 已关闭/已废弃` 顺序前进一步，
+  草稿态评分卡不能直接启用，跨级/逆向动作返回 `ok=false` 并附可读原因。
+- 漂移检测启用/流转时从监控数据集重读漂移值与阈值（`最近漂移值数值`、
+  `漂移阈值数值`），超阈值即告警；历史字符串字段全部保留，兼容旧核对口径。
+- 漂移告警状态与评分卡稳定性结论在同一把 `RLock` 内同批更新；检测关闭（中断）
+  后关联评分卡标记「检测中断」，不会保留过期的稳定结论。
+- 告警关闭后按原监控数据集重算稳定性，「告警时点特征偏移」以快照永久保留，
+  历史复验结论不被改写。
+- 复验/动作支持 `idem_key` 幂等键，并发请求只生成一条可复核复验明细；
+  评分卡当前稳定性结论始终唯一，不会同时保留稳定与告警两套结论。
+- 服务启动时自动执行一次联动对账（`POST /api/scorecard/reconcile` 可手动再跑），
+  仅校正确实不一致的记录，确定性幂等键保证重复执行不产生重复明细。
+- 复验明细数据集：`GET /api/scorecard/recheck-dataset`；
+  漂移待处理明细（登记评分卡复验）：`GET /api/datadrift/pending-detail`；
+  DATA-0001 为复核基准。
+
+## 测试
+
+```bash
+make test
+# 或：cd backend && .venv/bin/python -I tests/test_scorecard_drift.py -v
+# HTTP 端到端：先启动后端，再 .venv/bin/python -I tests/e2e_http.py
+```
+
 领域：数据工程
 子方向：数据分析与数据应用
